@@ -156,4 +156,3 @@ data "terraform_remote_state" "db" {
     region = "us-east-2"
   }
 }
-
