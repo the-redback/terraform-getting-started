@@ -14,11 +14,21 @@ provider "aws" {
 
 
 module "webserver_cluster" {
-  source = "../../../modules/services/webserver-cluster"
+  source = "../../../../modules/services/webserver-cluster"
 
   cluster_name           = "webservers-prod"
   db_remote_state_bucket = "tf-state-m29"
   db_remote_state_key    = "prod/data-stores/mysql/terraform.tfstate"
+
+  instance_type        = "t2.micro"
+  min_size             = 2
+  max_size             = 10
+  enable_autoscaling   = true
+
+  custom_tags = {
+    Owner     = "team-foo"
+    ManagedBy = "terraform"
+  }
 }
 
 resource "aws_autoscaling_schedule" "scale_out_during_business_hours" {

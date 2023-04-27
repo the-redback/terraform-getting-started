@@ -10,13 +10,15 @@ terraform {
 }
 
 resource "aws_launch_configuration" "example" {
-  image_id        = "ami-0fb653ca2d3203ac1"
+  image_id        = var.ami
   instance_type   = var.instance_type
   security_groups = [aws_security_group.instance.id]
+
   user_data       = templatefile("${path.module}/user-data.sh", {
     server_port = var.server_port
     db_address  = data.terraform_remote_state.db.outputs.address
     db_port     = data.terraform_remote_state.db.outputs.port
+    server_text = var.server_text
   })
 
   # Required when using a launch configuration with an auto scaling group.
@@ -26,6 +28,10 @@ resource "aws_launch_configuration" "example" {
 }
 
 resource "aws_autoscaling_group" "example" {
+  # Explicitly depend on the launch configuration's name so each time it's
+  # replaced, this ASG is also replaced
+  name = "${var.cluster_name}-${aws_launch_configuration.example.name}"
+
   launch_configuration = aws_launch_configuration.example.name
   vpc_zone_identifier  = data.aws_subnets.default.ids
   target_group_arns    = [aws_lb_target_group.asg.arn]
@@ -33,6 +39,16 @@ resource "aws_autoscaling_group" "example" {
 
   min_size = var.min_size
   max_size = var.max_size
+
+  # Wait for at least this many instances to pass health checks before
+  # considering the ASG deployment complete
+  min_elb_capacity = var.min_size
+
+  # When replacing this ASG, create the replacement first, and only delete the
+  # original after
+  lifecycle {
+    create_before_destroy = true
+  }
 
   tag {
     key                 = "Name"
@@ -53,7 +69,6 @@ resource "aws_autoscaling_group" "example" {
       propagate_at_launch = true
     }
   }
-
 }
 
 resource "aws_autoscaling_schedule" "scale_out_during_business_hours" {
@@ -214,7 +229,7 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu_utilization" {
 resource "aws_cloudwatch_metric_alarm" "low_cpu_credit_balance" {
   count = format("%.1s", var.instance_type) == "t" ? 1 : 0
 
-  alarm_name = "${var.cluster_name}-low-cpu-credit-balance"
+  alarm_name  = "${var.cluster_name}-low-cpu-credit-balance"
   namespace   = "AWS/EC2"
   metric_name = "CPUCreditBalance"
 
